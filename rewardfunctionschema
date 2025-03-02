@@ -1,0 +1,133 @@
+import json
+import re
+from fuzzywuzzy import fuzz
+
+def extract_json_from_find(query: str):
+
+    start = query.find("find(")
+    if start == -1:
+        raise ValueError("⚠️ Error: Invalid MongoDB Query Format. Ensure the query is correctly formatted.")
+
+    # Find the first `{` after "find("
+    brace_start = query.find("{", start)
+    if brace_start == -1:
+        raise ValueError("⚠️ Error: Could not find a valid JSON object in find().")
+
+    stack = []
+    for i in range(brace_start, len(query)):
+        if query[i] == "{":
+            stack.append(i)
+        elif query[i] == "}":
+            stack.pop()
+            if not stack:  # If stack is empty, we've found the matching closing brace
+                json_text = query[brace_start:i+1]
+
+                # Convert MongoDB-like syntax to valid JSON
+                json_text = re.sub(r'(\w+):', r'"\1":', json_text)  # Add double quotes around keys
+                return json_text
+
+    raise ValueError("⚠️ Error: Mismatched braces in MongoDB query.")
+
+def convert_mongo_shell_to_json(mongo_shell_query: str):
+    try:
+        json_query = extract_json_from_find(mongo_shell_query)
+
+        # Convert to a valid JSON object
+        json_dict = json.loads(json_query)
+        return json_dict
+
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"⚠️ Error: {e}")
+        return None
+
+
+def convert_schema_shell_to_json(schema_shell: str):
+
+    try:
+        schema_json = schema_shell.replace("'", '"')  # Convert single quotes to double quotes
+        schema_dict = json.loads(schema_json)  # Convert to Python dictionary
+        return schema_dict
+    except json.JSONDecodeError:
+        print("⚠️ Error: Invalid Schema Format. Ensure it is correctly formatted.")
+        return None
+
+def extract_fields_from_mongo(query: dict):
+
+    fields = set()
+
+    def extract_keys(obj):
+
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                fields.add(key)
+                extract_keys(value)  # Recursively check nested fields
+        elif isinstance(obj, list):
+            for item in obj:
+                extract_keys(item)
+
+    extract_keys(query)
+    return fields
+
+def extract_fields_from_schema(schema: dict):
+
+    fields = set()
+
+    for collection in schema.get("collections", []):
+        if "document" in collection:
+            def extract_keys(obj):
+                if isinstance(obj, dict):
+                    for key, value in obj.items():
+                        fields.add(key)
+                        extract_keys(value)
+
+            extract_keys(collection["document"]["properties"])
+
+    return fields
+
+
+def is_schema_linking_correct(nlp_query: str, mongo_output: dict, database: str, schema: dict, threshold=80):
+
+    query_fields = extract_fields_from_mongo(mongo_output)
+
+    schema_fields = extract_fields_from_schema(schema)
+
+    nlp_words = set(nlp_query.lower().split())
+
+    if not query_fields:
+        return 0.0  
+
+    matched_fields = 0 
+
+    for field in query_fields:  
+        for valid_field in schema_fields:  
+            similarity_score = fuzz.partial_ratio(field.lower(), valid_field.lower())  
+
+            if similarity_score > threshold:  
+                matched_fields += 1  
+                break  
+                
+    schema_score = matched_fields / len(query_fields) if query_fields else 0.0
+
+    return schema_score
+
+
+nlp_query = input("Enter NLP Query: ")
+mongo_shell_query = input("Enter MongoDB Output Query (Mongo Shell Format): ")
+mongo_output = convert_mongo_shell_to_json(mongo_shell_query)
+
+if mongo_output is None:
+    print("Error: Invalid MongoDB query format. Exiting.")
+    exit()
+
+database = input("Enter Database Name: ")
+
+schema_shell = input("Enter Schema (MongoDB Shell Format): ")
+schema = convert_schema_shell_to_json(schema_shell)
+
+if schema is None:
+    print("Error: Invalid Schema format. Exiting.")
+    exit()
+
+schema_score = is_schema_linking_correct(nlp_query, mongo_output, database, schema)
+
+print(f"\nSchema Linking Score: {schema_score:.2f}")
