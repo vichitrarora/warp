@@ -100,5 +100,4 @@ if not schema:
 
 schema_score = is_schema_linking_correct(mongo_output, schema)
 print(f"\nSchema Linking Score: {schema_score:.2f}")
-print("Extracted Query Fields:", extract_fields_from_mongo(mongo_output))
-print("Extracted Schema Fields:", extract_fields_from_schema(schema))
+
