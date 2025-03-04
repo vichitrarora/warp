@@ -2,8 +2,10 @@ from pymongo import MongoClient
 import urllib.parse
 import re
 
-username = urllib.parse.quote_plus("vichitrarora")
-password = urllib.parse.quote_plus("Vishu@133824")  
+user = input("Enter the username: ")
+passw = input("Enter the password: ")
+username = urllib.parse.quote_plus(user)
+password = urllib.parse.quote_plus(passw)  
 
 uri = f"mongodb+srv://{username}:{password}@cluster0.7j18x.mongodb.net/?retryWrites=true&w=majority"
 
