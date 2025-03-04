@@ -6,16 +6,14 @@ from fuzzywuzzy import fuzz
 
 def extract_keywords(query):
     keywords = set()
-    query_str = json.dumps(query)
-    for key in query.keys():
-        keywords.add(key)
-        if key.startswith("$"):
+    def recursive_extract(q):
+        for key, value in q.items():
             keywords.add(key)
-    for value in query.values():
-        if isinstance(value, dict):
-            keywords.update(extract_keywords(value))
-        elif isinstance(value, str):
-            keywords.add(value)
+            if isinstance(value, dict):
+                recursive_extract(value)
+            elif isinstance(value, str):
+                keywords.add(value)
+    recursive_extract(query)
     return keywords
 
 def keyword_match_score(input_query, expected_query):
@@ -23,7 +21,9 @@ def keyword_match_score(input_query, expected_query):
     expected_keywords = extract_keywords(expected_query)
     common_keywords = input_keywords.intersection(expected_keywords)
     match_score = len(common_keywords) / max(len(expected_keywords), 1)
-    return round(match_score * 10, 2)
+    structural_similarity = fuzz.ratio(json.dumps(input_query, sort_keys=True), json.dumps(expected_query, sort_keys=True)) / 100
+    adjusted_score = (match_score + structural_similarity) / 2
+    return round(adjusted_score, 2)
 
 def extract_json_from_find(query: str):
     try:
@@ -46,17 +46,6 @@ def extract_json_from_find(query: str):
     except Exception as e:
         raise ValueError(f"Error parsing MongoDB query: {e}")
     raise ValueError("Mismatched braces in MongoDB query.")
-
-def convert_mongo_shell_to_json(mongo_shell_query: str):
-    try:
-        return json.loads(mongo_shell_query)
-    except json.JSONDecodeError:
-        try:
-            json_query = extract_json_from_find(mongo_shell_query)
-            return json.loads(json_query)
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"Error: {e}")
-            return None
 
 def extract_fields_from_mongo(query: dict):
     fields = set()
@@ -115,13 +104,13 @@ password = urllib.parse.quote_plus(passw)
 uri = f"mongodb+srv://{username}:{password}@cluster0.7j18x.mongodb.net/?retryWrites=true&w=majority"
 
 mongo_shell_query = input("Enter MongoDB Output Query (JSON format): ")
-mongo_output = convert_mongo_shell_to_json(mongo_shell_query)
+mongo_output = extract_json_from_find(mongo_shell_query)
 if not mongo_output:
     print("Error: Invalid MongoDB Output Query format. Exiting.")
     exit()
 
 predicted_mongo_query = input("Enter Predicted MongoDB Query (JSON format): ")
-predicted_query_json = convert_mongo_shell_to_json(predicted_mongo_query)
+predicted_query_json = extract_json_from_find(predicted_mongo_query)
 if not predicted_query_json:
     print("Error: Invalid Predicted MongoDB Query format. Exiting.")
     exit()
